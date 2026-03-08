@@ -5,40 +5,41 @@ use core::arch::global_asm;
 mod uart;
 mod timer;
 mod vt100;
+mod game;
+mod render;
+
 
 global_asm!(include_str!("boot.S"));
 
 #[no_mangle]
 extern "C" fn kmain() -> ! {
     uart::Uart::init();
+    println!("Booting Text Pong on RISC-V");
+
+    timer::delay_ticks(timer::TIMEBASE_FREQ / 2);
     vt100::clear_screen();
-    vt100::hide_cursor();
-
-    vt100::move_cursor(1, 1);
-    uart::Uart::putc(b'+');
-    for _ in 0..60 {
-        uart::Uart::putc(b'-');
-    }
-    uart::Uart::putc(b'+');
-    for row in 2..=21 {
-        vt100::move_cursor(row, 1);
-        uart::Uart::putc(b'|');
-        vt100::move_cursor(row, 62);
-        uart::Uart::putc(b'|');
-    }
-
-    vt100::move_cursor(22, 1);
-    uart::Uart::putc(b'+');
-    for _ in 0..60 {
-        uart::Uart::putc(b'-');
-    }
-    uart::Uart::putc(b'+');
+    let mut state = game::GameState::new();
+    let frame_ticks = timer::ticks_per_frame(30); // 30fps
 
     loop {
+        let frame_start = timer::mtime();
+
+        state.handle_input();
+        state.update_ai();
+        state.update_ball();
+        render::draw(&state);
+        let deadline = frame_start + frame_ticks;
+        timer::delay_until(deadline);
+
     }
+
 }
 
 #[panic_handler]
-pub fn panic(_info: &core::panic::PanicInfo) -> ! {
+pub fn panic(info: &core::panic::PanicInfo) -> ! {
+    println!("\r\n!!! PANIC !!!");
+    if let Some(loc) = info.location() {
+        println!("  at {}:{}", loc.file(), loc.line());
+    }
     loop {}
 }
